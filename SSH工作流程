@@ -1,0 +1,127 @@
+SSH三大框架的各自工作流程
+一.Struts2的工作流程：
+1.用户在客户端发起请求，客户端会初始化一个servlet容器请求；
+2.servlet容器把请求会传递给context容器，context容器找到目标web工程。
+3.进行解析web.xml中的struts标签中的配置：
+<filter>
+    <filter-name>struts2</filter-name>
+    <filter-class>org.apache.struts2.dispatcher.ng.filter.StrutsPrepareAndExecuteFilter</filter-
+ 
+class>
+  </filter>
+  <filter-mapping>
+    <filter-name>struts2</filter-name>
+    <url-pattern>/*</url-pattern>
+  </filter-mapping>
+
+4.然后进行struts的一系列的SSH三大框架的各自工作流程
+    <property name="dialect">
+        org.hibernate.dialect.Oracle9Dialect
+    </property>
+    <property name="connection.url">
+        jdbc:oracle:thin:@127.0.0.1:1521:orcl
+    </property>
+    <property name="connection.username">system</property>
+    <property name="connection.password">java</property>
+    <property name="connection.driver_class">
+        oracle.jdbc.driver.OracleDriver
+    </property>
+    <property name="myeclipse.connection.profile">oeconn</property>
+    <property name="show_sql">true</property>
+    <property name="format_sql">true</property>
+    <property name="cache.provider_class">
+        org.hibernate.cache.EhCacheProvider
+    </property>
+ 
+</session-factory>
+
+3.有谁来读取和解析这么重要的配置文件呢？ 当然是HibernateSessionFactory了。
+在这个类中有一段静态代码块：
+private static final ThreadLocal<Session> threadLocal = new ThreadLocal<Session>();
+    private static org.hibernate.SessionFactory sessionFactory;
+ 
+    private static Configuration configuration = new Configuration();
+    private static ServiceRegistry serviceRegistry;
+ 
+    static {
+        try {
+            configuration.configure();
+            serviceRegistry = new ServiceRegistryBuilder().applySettings
+ 
+(configuration.getProperties()).buildServiceRegistry();
+            sessionFactory = configuration.buildSessionFactory(serviceRegistry);
+        } catch (Exception e) {
+            System.err.println("%%%% Error Creating SessionFactory %%%%");
+            e.printStackTrace();
+        }
+    }
+
+在这个静态代码块中：通过Configuration类的configure方法加载解析hibernate.cfg.xml；同时也创建了
+
+sessionFactory对象（它用来创建session对象的），所以在tomcat服务器启动时就会运行该段代码；
+在这里顺便提提session创建过程：
+1）为什么session要放在ThreadLocal<Session> 中？
+我们的模板类虽然是通过资源池获取数据库连接或会话对象的，根据持久化技术的不同，模板类需要
+绑定数据库连接和会话资源，但这些资源本身是非线程安全的，也就是不能被多个线程共享，所以它
+Hibernate不需同步就可以解决线程安全问题，所以它将session放在了ThreadLocal中。
+2）通过SessionFatory创建一个单例session
+ 
+public static Session getSession() throws HibernateException {
+        Session session = (Session) threadLocal.get();
+ 
+        if (session == null || !session.isOpen()) {
+            if (sessionFactory == null) {
+                rebuildSessionFactory();
+            }
+            session = (sessionFactory != null) ? sessionFactory.openSession()
+                    : null;
+            threadLocal.set(session);
+        }
+ 
+        return session;
+    }
+
+4.创建事务对象session.BeginTransaction方法
+5.创建持久化对象session.createQuery方法
+6.提交事务
+7.关闭session、sessionFactory.
+
+三.Spring的工作流程：
+1.在myeclipse中加入Spring组件，产生一个applicationContext.xml文件。
+2.在web.xml中加入以下配置：
+
+<listener>
+    <listener-class>org.springframework.web.context.ContextLoaderListener</listener-class>
+  </listener>
+  <context-param>
+    <param-name>contextConfigLocation</param-name>
+    <param-value>classpath:applicationContext.xml</param-value>
+  </context-param>
+
+web工程进入到web.xml中扫描，发现有ContextLoaderListener类，监听器，那就说明有Spring组件了。
+在找发现<context-param>标签中有classpath值，然后流程转到applicationContext.xml中去；
+在beans标签下会加入数据源信息（数据库的配置信息）。
+
+<!-- 加入数据源 -->
+    <bean id="dataSource"
+        class="org.apache.commons.dbcp.BasicDataSource">
+        <property name="driverClassName"
+            value="oracle.jdbc.driver.OracleDriver">
+        </property>
+        <property name="url"
+            value="jdbc:oracle:thin:@localhost:1521:orcl">
+        </property>
+        <property name="username" value="empdb"></property>
+        <property name="password" value="java"></property>
+    </bean>
+
+3.然后通过Ioc控制反转注入bean。实现了对象不用自己new
+,Spring会帮你完成，交给他托管。
+<!-- 注入JdbcTemplate类 -->
+    <bean id="jdbctemp" class="org.springframework.jdbc.core.JdbcTemplate">
+        <property name="dataSource" ref="dataSource"></property>
+    </bean>
+    <!-- 注入dao类 -->
+    <bean id="bdao" class="com.dao.BankDao">
+        <property name="jtemp" ref="jdbctemp"></property>
+    </bean>
